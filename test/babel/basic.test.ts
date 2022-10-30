@@ -1,33 +1,37 @@
 import { describe, expect, it } from 'vitest'
 import parser from '@babel/parser'
 import traverse from '@babel/traverse'
-
+import types from '@babel/types'
+import generator from '@babel/generator'
+const code = `
+function testRegex(str){
+  const reg = /regex/;
+  return str.match(reg)
+}
+`
 describe('basic', () => {
   it('should parse basic code', () => {
-    const code = '(4+ 10) * 2'
-    const ast = parser.parse(code)
-    console.log('ast', ast)
-    const [statement] = ast.program.body
-    if (statement.type === 'ExpressionStatement'
-      && statement.expression.type === 'BinaryExpression'
-      && statement.expression.right.type === 'BinaryExpression'
-      && statement.expression.right.left.type === 'NumericLiteral'
-      && statement.expression.right.right.type === 'NumericLiteral'
-
-    ) {
-      console.log(statement)
-      console.log(statement.expression.right.left.value)
-    }
-  })
-
-  it.only('should traverse', () => {
-    const code = ' (4+ 10) * 2'
     const ast = parser.parse(code)
 
     traverse(ast, {
-      NumericLiteral(path) {
-        console.log('🚀NumericLiteral ~ path', path.node)
+      RegExpLiteral(path) {
+        const program = path.findParent(types.isProgram)
+
+        const name = path.parent.id.name
+        const newIdentifier = path.scope.generateUidIdentifier(name)
+        path.scope.rename(name, newIdentifier.name)
+        const variableDeclaration = types.variableDeclaration('const', [types.variableDeclarator(newIdentifier, path.node)])
+
+        program?.node.body.unshift(variableDeclaration)
+        path.parentPath.remove()
       },
     })
+    const result = generator(ast)
+    expect(result.code).toMatchInlineSnapshot(`
+      "const _reg = /regex/;
+      function testRegex(str) {
+        return str.match(_reg);
+      }"
+    `)
   })
 })
